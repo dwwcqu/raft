@@ -20,9 +20,11 @@
 
 #include <raft/random/rng.cuh>
 
+#include <raft/neighbors/cagra.cuh>
 #include <raft/neighbors/ivf_flat.cuh>
 #include <raft/neighbors/ivf_pq.cuh>
 #include <raft/spatial/knn/knn.cuh>
+#include <raft/util/itertools.hpp>
 
 #include <rmm/mr/device/managed_memory_resource.hpp>
 #include <rmm/mr/device/per_device_resource.hpp>
@@ -153,6 +155,46 @@ struct ivf_flat_knn {
     search_params.n_probes = 20;
     raft::neighbors::ivf_flat::search(
       handle, search_params, *index, search_items, ps.n_queries, ps.k, out_idxs, out_dists);
+  }
+};
+
+template <typename ValT, typename IdxT>
+struct cagra_knn {
+  using dist_t = float;
+
+  std::optional<const raft::neighbors::experimental::cagra::index<ValT, IdxT>> index;
+  raft::neighbors::experimental::cagra::index_params index_params;
+  raft::neighbors::experimental::cagra::search_params search_params;
+  params ps;
+
+  cagra_knn(const raft::device_resources& handle, const params& ps, const ValT* data) : ps(ps)
+  {
+    // index_params.intermediate_graph_degree = 128;
+    // index_params.graph_degree = 64;
+    index_params.metric = raft::distance::DistanceType::L2Expanded;
+
+    auto dataset_view =
+      raft::make_device_matrix_view<const ValT, IdxT>(data, ps.n_samples, ps.n_dims);
+    index.emplace(raft::neighbors::experimental::cagra::build(handle, index_params, dataset_view));
+  }
+
+  void search(const raft::device_resources& handle,
+              const ValT* search_items,
+              dist_t* out_dists,
+              IdxT* out_idxs)
+  {
+    // search_params.algo        = ps.algo;
+    // search_params.max_queries = 1024;
+    // search_params.itopk_size  = 64;
+    // search_params.team_size   = 0;
+
+    auto queries_view =
+      raft::make_device_matrix_view<const ValT, IdxT>(search_items, ps.n_queries, ps.n_dims);
+    auto indices_view = raft::make_device_matrix_view<IdxT, IdxT>(out_idxs, ps.n_queries, ps.k);
+    auto distances_view =
+      raft::make_device_matrix_view<dist_t, IdxT>(out_dists, ps.n_queries, ps.k);
+    raft::neighbors::experimental::cagra::search(
+      handle, search_params, *index, queries_view, indices_view, distances_view);
   }
 };
 
@@ -373,10 +415,14 @@ struct knn : public fixture {
 inline const std::vector<params> kInputs{
   {2000000, 128, 1000, 32}, {10000000, 128, 1000, 32}, {10000, 8192, 1000, 32}};
 
+inline const std::vector<params> kCagraInputs = raft::util::itertools::product<params>(
+  {20000ull, 200000ull}, {128ull, 256ull, 512ull, 1024ull}, {1000ull}, {32ull});
+
 inline const std::vector<TransferStrategy> kAllStrategies{
   TransferStrategy::NO_COPY, TransferStrategy::MAP_PINNED, TransferStrategy::MANAGED};
 inline const std::vector<TransferStrategy> kNoCopyOnly{TransferStrategy::NO_COPY};
 
+inline const std::vector<Scope> kScopeSearch{Scope::SEARCH};
 inline const std::vector<Scope> kScopeFull{Scope::BUILD_SEARCH};
 inline const std::vector<Scope> kAllScopes{Scope::BUILD_SEARCH, Scope::SEARCH, Scope::BUILD};
 
