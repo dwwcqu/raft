@@ -32,6 +32,8 @@
 #include <thrust/fill.h>
 #include <type_traits>
 
+#include <raft/core/logger.hpp>
+
 namespace raft::neighbors::experimental::cagra {
 /**
  * @ingroup cagra
@@ -123,35 +125,35 @@ struct index : ann::index {
   }
 
   // /** Total length of the index. */
-  [[nodiscard]] constexpr inline auto size() const noexcept -> IdxT { return dataset_.extent(0); }
+  [[nodiscard]] constexpr inline auto size() const noexcept -> IdxT
+  {
+    return dataset_view_.extent(0);
+  }
 
   /** Dimensionality of the data. */
   [[nodiscard]] constexpr inline auto dim() const noexcept -> uint32_t
   {
-    return dataset_.extent(1);
+    return dataset_view_.extent(1);
   }
   /** Graph degree */
   [[nodiscard]] constexpr inline auto graph_degree() const noexcept -> uint32_t
   {
-    return graph_.extent(1);
+    return graph_view_.extent(1);
   }
 
   /** Dataset [size, dim] */
   [[nodiscard]] inline auto dataset() const noexcept -> device_matrix_view<const T, IdxT, row_major>
   {
-    return dataset_.view();
+    return dataset_view_;
   }
 
   /** neighborhood graph [size, graph-degree] */
-  inline auto graph() noexcept -> device_matrix_view<IdxT, IdxT, row_major>
-  {
-    return graph_.view();
-  }
+  inline auto graph() noexcept -> device_matrix_view<IdxT, IdxT, row_major> { return graph_view_; }
 
   [[nodiscard]] inline auto graph() const noexcept
     -> device_matrix_view<const IdxT, IdxT, row_major>
   {
-    return graph_.view();
+    return graph_view_;
   }
 
   // Don't allow copying the index for performance reasons (try avoiding copying data)
@@ -183,15 +185,36 @@ struct index : ann::index {
   {
     RAFT_EXPECTS(dataset.extent(0) == knn_graph.extent(0),
                  "Dataset and knn_graph must have equal number of rows");
+    RAFT_LOG_INFO("CAGRA constructor, copying arrays");
     raft::copy(dataset_.data_handle(), dataset.data_handle(), dataset.size(), res.get_stream());
     raft::copy(graph_.data_handle(), knn_graph.data_handle(), knn_graph.size(), res.get_stream());
+    dataset_view_ = dataset_.view();
+    graph_view_   = graph_.view();
     res.sync_stream();
+  }
+
+  /** Construct an index from dataset and knn_graph arrays */
+  index(raft::device_resources const& res,
+        raft::distance::DistanceType metric,
+        raft::device_matrix_view<const T, IdxT, row_major> dataset,
+        raft::device_matrix_view<const IdxT, IdxT, row_major> knn_graph)
+    : ann::index(),
+      metric_(metric),
+      dataset_(make_device_matrix<T, IdxT>(res, 0, 0)),
+      graph_(make_device_matrix<IdxT, IdxT>(res, 0, 0))
+  {
+    RAFT_EXPECTS(dataset.extent(0) == knn_graph.extent(0),
+                 "Dataset and knn_graph must have equal number of rows");
+    dataset_view_ = dataset;
+    graph_view_   = knn_graph;
   }
 
  private:
   raft::distance::DistanceType metric_;
   raft::device_matrix<T, IdxT, row_major> dataset_;
   raft::device_matrix<IdxT, IdxT, row_major> graph_;
+  raft::device_matrix_view<const T, IdxT, row_major> dataset_view_;
+  raft::device_matrix_view<const IdxT, IdxT, row_major> graph_view_;
 };
 
 /** @} */

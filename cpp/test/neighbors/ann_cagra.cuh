@@ -55,6 +55,7 @@ struct AnnCagraInputs {
   bool host_dataset;
   // std::optional<double>
   double min_recall;  // = std::nullopt;
+  bool copy_arrays;
 };
 
 inline ::std::ostream& operator<<(::std::ostream& os, const AnnCagraInputs& p)
@@ -122,21 +123,30 @@ class AnnCagraTest : public ::testing::TestWithParam<AnnCagraInputs> {
         auto database_view = raft::make_device_matrix_view<const DataT, IdxT>(
           (const DataT*)database.data(), ps.n_rows, ps.dim);
 
-        {
-          cagra::index<DataT, IdxT> index(handle_);
+        cagra::index<DataT, IdxT> index(handle_);
+        if (!ps.copy_arrays) {
+          // Using constructor that stores array refs, test device arrays only, no serialization.
+          if (ps.host_dataset) {
+            // GTEST_SKIP << "Invalid test parameter combinations";
+            return;
+          }
+          index = build_no_copy(index_params, database_view);
+        } else {
+          // Using
           if (ps.host_dataset) {
             auto database_host = raft::make_host_matrix<DataT, IdxT>(ps.n_rows, ps.dim);
             raft::copy(database_host.data_handle(), database.data(), database.size(), stream_);
             auto database_host_view = raft::make_host_matrix_view<const DataT, IdxT>(
               (const DataT*)database_host.data_handle(), ps.n_rows, ps.dim);
-            index = cagra::build<DataT, IdxT>(handle_, index_params, database_host_view);
+            auto tmp_index = cagra::build<DataT, IdxT>(handle_, index_params, database_host_view);
+            cagra::serialize(handle_, "cagra_index", tmp_index);
           } else {
-            index = cagra::build<DataT, IdxT>(handle_, index_params, database_view);
-          };
-          cagra::serialize(handle_, "cagra_index", index);
-        }
-        auto index = cagra::deserialize<DataT, IdxT>(handle_, "cagra_index");
+            auto tmp_index = cagra::build<DataT, IdxT>(handle_, index_params, database_view);
+            cagra::serialize(handle_, "cagra_index", tmp_index);
+          }
 
+          index = cagra::deserialize<DataT, IdxT>(handle_, "cagra_index");
+        }
         auto search_queries_view = raft::make_device_matrix_view<const DataT, IdxT>(
           search_queries.data(), ps.n_queries, ps.dim);
         auto indices_out_view =
@@ -181,6 +191,39 @@ class AnnCagraTest : public ::testing::TestWithParam<AnnCagraInputs> {
     }
   }
 
+  // This function is almost identical to cagra::build(). The difference is that we create
+  // the index from device arrays, therefore we shall invoke the constructor that does no
+  // additional copies.
+  cagra::index<DataT, IdxT> build_no_copy(const cagra::index_params& params,
+                                          device_matrix_view<const DataT, IdxT> dataset)
+  {
+    size_t degree = params.intermediate_graph_degree;
+    if (degree >= dataset.extent(0)) { degree = dataset.extent(0) - 1; }
+    RAFT_EXPECTS(degree >= params.graph_degree,
+                 "Intermediate graph degree cannot be smaller than final graph degree");
+
+    auto knn_graph = raft::make_host_matrix<IdxT, IdxT>(dataset.extent(0), degree);
+
+    build_knn_graph(handle_, dataset, knn_graph.view());
+
+    auto cagra_graph = raft::make_host_matrix<IdxT, IdxT>(dataset.extent(0), params.graph_degree);
+
+    prune<DataT, IdxT>(handle_, dataset, knn_graph.view(), cagra_graph.view());
+
+    auto cagra_graph_dev_ =
+      raft::make_device_matrix<IdxT, IdxT>(handle_, dataset.extent(0), cagra_graph.extent(1));
+
+    raft::copy(cagra_graph_dev_.data_handle(),
+               cagra_graph.data_handle(),
+               cagra_graph.size(),
+               handle_.get_stream());
+
+    return cagra::index<DataT, IdxT>(handle_,
+                                     params.metric,
+                                     make_const_mdspan(dataset),
+                                     make_const_mdspan(cagra_graph_dev_.view()));
+  }
+
   void SetUp() override
   {
     std::cout << "Resizing database: " << ps.n_rows * ps.dim << std::endl;
@@ -212,6 +255,7 @@ class AnnCagraTest : public ::testing::TestWithParam<AnnCagraInputs> {
   AnnCagraInputs ps;
   rmm::device_uvector<DataT> database;
   rmm::device_uvector<DataT> search_queries;
+  raft::device_matrix_view<DataT, IdxT> cagra_graph_dev_;
 };
 
 inline std::vector<AnnCagraInputs> generate_inputs()
@@ -229,7 +273,8 @@ inline std::vector<AnnCagraInputs> generate_inputs()
     {1},
     {raft::distance::DistanceType::L2Expanded},
     {false},
-    {0.995});
+    {0.995},
+    {true});
 
   auto inputs2 =
     raft::util::itertools::product<AnnCagraInputs>({100},
@@ -243,7 +288,9 @@ inline std::vector<AnnCagraInputs> generate_inputs()
                                                    {1},
                                                    {raft::distance::DistanceType::L2Expanded},
                                                    {false},
-                                                   {0.995});
+                                                   {0.995},
+                                                   {true});
+
   inputs.insert(inputs.end(), inputs2.begin(), inputs2.end());
   inputs2 =
     raft::util::itertools::product<AnnCagraInputs>({100},
@@ -257,7 +304,8 @@ inline std::vector<AnnCagraInputs> generate_inputs()
                                                    {1},
                                                    {raft::distance::DistanceType::L2Expanded},
                                                    {false},
-                                                   {0.995});
+                                                   {0.995},
+                                                   {true});
   inputs.insert(inputs.end(), inputs2.begin(), inputs2.end());
 
   inputs2 =
@@ -272,7 +320,8 @@ inline std::vector<AnnCagraInputs> generate_inputs()
                                                    {1},
                                                    {raft::distance::DistanceType::L2Expanded},
                                                    {false},
-                                                   {0.995});
+                                                   {0.995},
+                                                   {true});
   inputs.insert(inputs.end(), inputs2.begin(), inputs2.end());
 
   inputs2 =
@@ -287,7 +336,8 @@ inline std::vector<AnnCagraInputs> generate_inputs()
                                                    {1},
                                                    {raft::distance::DistanceType::L2Expanded},
                                                    {false, true},
-                                                   {0.995});
+                                                   {0.995},
+                                                   {true});
   inputs.insert(inputs.end(), inputs2.begin(), inputs2.end());
 
   inputs2 =
@@ -302,7 +352,25 @@ inline std::vector<AnnCagraInputs> generate_inputs()
                                                    {1},
                                                    {raft::distance::DistanceType::L2Expanded},
                                                    {false, true},
-                                                   {0.995});
+                                                   {0.995},
+                                                   {true});
+  inputs.insert(inputs.end(), inputs2.begin(), inputs2.end());
+
+  inputs2 =
+    raft::util::itertools::product<AnnCagraInputs>({100},
+                                                   {1000},
+                                                   {64},
+                                                   {16},
+                                                   {search_algo::AUTO},
+                                                   {10},
+                                                   {0},
+                                                   {64},
+                                                   {1},
+                                                   {raft::distance::DistanceType::L2Expanded},
+                                                   {false},
+                                                   {0.995},
+                                                   {false});  // no copy while constructing index
+
   inputs.insert(inputs.end(), inputs2.begin(), inputs2.end());
 
   return inputs;
