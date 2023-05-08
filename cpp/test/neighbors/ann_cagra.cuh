@@ -73,10 +73,9 @@ template <typename DistanceT, typename DataT, typename IdxT>
 class AnnCagraTest : public ::testing::TestWithParam<AnnCagraInputs> {
  public:
   AnnCagraTest()
-    : stream_(handle_.get_stream()),
-      ps(::testing::TestWithParam<AnnCagraInputs>::GetParam()),
-      database(0, stream_),
-      search_queries(0, stream_)
+    : ps(::testing::TestWithParam<AnnCagraInputs>::GetParam()),
+      database(0, handle_.get_stream()),
+      search_queries(0, handle_.get_stream())
   {
   }
 
@@ -90,8 +89,8 @@ class AnnCagraTest : public ::testing::TestWithParam<AnnCagraInputs> {
     std::vector<DistanceT> distances_naive(queries_size);
 
     {
-      rmm::device_uvector<DistanceT> distances_naive_dev(queries_size, stream_);
-      rmm::device_uvector<IdxT> indices_naive_dev(queries_size, stream_);
+      rmm::device_uvector<DistanceT> distances_naive_dev(queries_size, handle_.get_stream());
+      rmm::device_uvector<IdxT> indices_naive_dev(queries_size, handle_.get_stream());
       naive_knn<DistanceT, DataT, IdxT>(distances_naive_dev.data(),
                                         indices_naive_dev.data(),
                                         search_queries.data(),
@@ -101,15 +100,17 @@ class AnnCagraTest : public ::testing::TestWithParam<AnnCagraInputs> {
                                         ps.dim,
                                         ps.k,
                                         ps.metric,
-                                        stream_);
-      update_host(distances_naive.data(), distances_naive_dev.data(), queries_size, stream_);
-      update_host(indices_naive.data(), indices_naive_dev.data(), queries_size, stream_);
-      handle_.sync_stream(stream_);
+                                        handle_.get_stream());
+      update_host(
+        distances_naive.data(), distances_naive_dev.data(), queries_size, handle_.get_stream());
+      update_host(
+        indices_naive.data(), indices_naive_dev.data(), queries_size, handle_.get_stream());
+      handle_.sync_stream();
     }
 
     {
-      rmm::device_uvector<DistanceT> distances_dev(queries_size, stream_);
-      rmm::device_uvector<IdxT> indices_dev(queries_size, stream_);
+      rmm::device_uvector<DistanceT> distances_dev(queries_size, handle_.get_stream());
+      rmm::device_uvector<IdxT> indices_dev(queries_size, handle_.get_stream());
 
       {
         cagra::index_params index_params;
@@ -135,7 +136,8 @@ class AnnCagraTest : public ::testing::TestWithParam<AnnCagraInputs> {
           // Using
           if (ps.host_dataset) {
             auto database_host = raft::make_host_matrix<DataT, IdxT>(ps.n_rows, ps.dim);
-            raft::copy(database_host.data_handle(), database.data(), database.size(), stream_);
+            raft::copy(
+              database_host.data_handle(), database.data(), database.size(), handle_.get_stream());
             auto database_host_view = raft::make_host_matrix_view<const DataT, IdxT>(
               (const DataT*)database_host.data_handle(), ps.n_rows, ps.dim);
             auto tmp_index = cagra::build<DataT, IdxT>(handle_, index_params, database_host_view);
@@ -157,9 +159,10 @@ class AnnCagraTest : public ::testing::TestWithParam<AnnCagraInputs> {
         cagra::search(
           handle_, search_params, index, search_queries_view, indices_out_view, dists_out_view);
 
-        update_host(distances_Cagra.data(), distances_dev.data(), queries_size, stream_);
-        update_host(indices_Cagra.data(), indices_dev.data(), queries_size, stream_);
-        handle_.sync_stream(stream_);
+        update_host(
+          distances_Cagra.data(), distances_dev.data(), queries_size, handle_.get_stream());
+        update_host(indices_Cagra.data(), indices_dev.data(), queries_size, handle_.get_stream());
+        handle_.sync_stream();
       }
       // for (int i = 0; i < ps.n_queries; i++) {
       //   //  std::cout << "query " << i << std::end;
@@ -227,31 +230,32 @@ class AnnCagraTest : public ::testing::TestWithParam<AnnCagraInputs> {
   void SetUp() override
   {
     std::cout << "Resizing database: " << ps.n_rows * ps.dim << std::endl;
-    database.resize(((size_t)ps.n_rows) * ps.dim, stream_);
+    database.resize(((size_t)ps.n_rows) * ps.dim, handle_.get_stream());
     std::cout << "Done.\nResizing queries" << std::endl;
-    search_queries.resize(ps.n_queries * ps.dim, stream_);
+    search_queries.resize(ps.n_queries * ps.dim, handle_.get_stream());
     std::cout << "Done.\nRuning rng" << std::endl;
     raft::random::Rng r(1234ULL);
     if constexpr (std::is_same<DataT, float>{}) {
-      r.uniform(database.data(), ps.n_rows * ps.dim, DataT(0.1), DataT(2.0), stream_);
-      r.uniform(search_queries.data(), ps.n_queries * ps.dim, DataT(0.1), DataT(2.0), stream_);
+      r.uniform(database.data(), ps.n_rows * ps.dim, DataT(0.1), DataT(2.0), handle_.get_stream());
+      r.uniform(
+        search_queries.data(), ps.n_queries * ps.dim, DataT(0.1), DataT(2.0), handle_.get_stream());
     } else {
-      r.uniformInt(database.data(), ps.n_rows * ps.dim, DataT(1), DataT(20), stream_);
-      r.uniformInt(search_queries.data(), ps.n_queries * ps.dim, DataT(1), DataT(20), stream_);
+      r.uniformInt(database.data(), ps.n_rows * ps.dim, DataT(1), DataT(20), handle_.get_stream());
+      r.uniformInt(
+        search_queries.data(), ps.n_queries * ps.dim, DataT(1), DataT(20), handle_.get_stream());
     }
-    handle_.sync_stream(stream_);
+    handle_.sync_stream();
   }
 
   void TearDown() override
   {
-    handle_.sync_stream(stream_);
-    database.resize(0, stream_);
-    search_queries.resize(0, stream_);
+    handle_.sync_stream();
+    database.resize(0, handle_.get_stream());
+    search_queries.resize(0, handle_.get_stream());
   }
 
  private:
   raft::device_resources handle_;
-  rmm::cuda_stream_view stream_;
   AnnCagraInputs ps;
   rmm::device_uvector<DataT> database;
   rmm::device_uvector<DataT> search_queries;
