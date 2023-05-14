@@ -15,6 +15,10 @@
  */
 
 #include <gtest/gtest.h>
+// TODO(tfeher): remove these definitions once https://github.com/rapidsai/raft/issues/1459
+// is resolved
+#define RAFT_EXPLICIT_INSTANTIATE_ONLY_CAGRA
+#define RAFT_COMPILED_CAGRA
 
 #include "../ann_cagra.cuh"
 

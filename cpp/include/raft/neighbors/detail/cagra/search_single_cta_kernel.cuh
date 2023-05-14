@@ -15,10 +15,10 @@
  */
 #pragma once
 
-#ifndef RAFT_EXPLICIT_INSTANTIATE_ONLY
+#ifndef RAFT_EXPLICIT_INSTANTIATE_ONLY_CAGRA
 #include "search_single_cta_kernel-inl.cuh"
 #endif
 
-#ifdef RAFT_COMPILED
+#ifdef RAFT_COMPILED_CAGRA
 #include "search_single_cta_kernel-ext.cuh"
 #endif

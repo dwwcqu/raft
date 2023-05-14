@@ -332,6 +332,35 @@ if(BUILD_TESTS)
     test/neighbors/epsilon_neighborhood.cu
     test/neighbors/refine.cu
     test/neighbors/selection.cu
+    # TODO(tfeher): move the cagra template instantiation .cu files back to raft_lib
+    # once https://github.com/rapidsai/raft/issues/1459 is resolved.
+    src/neighbors/cagra_build_float_uint32.cu
+    src/neighbors/cagra_prune_float_uint32.cu
+    src/neighbors/cagra_search_float_uint32.cu
+    src/neighbors/detail/cagra/search_multi_cta_float_uint32_dim128_t8.cu
+    src/neighbors/detail/cagra/search_multi_cta_float_uint32_dim256_t16.cu
+    src/neighbors/detail/cagra/search_multi_cta_float_uint32_dim512_t32.cu
+    src/neighbors/detail/cagra/search_multi_cta_float_uint32_dim1024_t32.cu  
+    src/neighbors/detail/cagra/search_multi_cta_int8_uint32_dim128_t8.cu
+    src/neighbors/detail/cagra/search_multi_cta_int8_uint32_dim256_t16.cu
+    src/neighbors/detail/cagra/search_multi_cta_int8_uint32_dim512_t32.cu
+    src/neighbors/detail/cagra/search_multi_cta_int8_uint32_dim1024_t32.cu
+    src/neighbors/detail/cagra/search_multi_cta_uint8_uint32_dim128_t8.cu
+    src/neighbors/detail/cagra/search_multi_cta_uint8_uint32_dim256_t16.cu
+    src/neighbors/detail/cagra/search_multi_cta_uint8_uint32_dim512_t32.cu
+    src/neighbors/detail/cagra/search_multi_cta_uint8_uint32_dim1024_t32.cu
+    src/neighbors/detail/cagra/search_single_cta_float_uint32_dim128_t8.cu
+    src/neighbors/detail/cagra/search_single_cta_float_uint32_dim256_t16.cu
+    src/neighbors/detail/cagra/search_single_cta_float_uint32_dim512_t32.cu
+    src/neighbors/detail/cagra/search_single_cta_float_uint32_dim1024_t32.cu
+    src/neighbors/detail/cagra/search_single_cta_int8_uint32_dim128_t8.cu
+    src/neighbors/detail/cagra/search_single_cta_int8_uint32_dim256_t16.cu
+    src/neighbors/detail/cagra/search_single_cta_int8_uint32_dim512_t32.cu
+    src/neighbors/detail/cagra/search_single_cta_int8_uint32_dim1024_t32.cu
+    src/neighbors/detail/cagra/search_single_cta_uint8_uint32_dim128_t8.cu
+    src/neighbors/detail/cagra/search_single_cta_uint8_uint32_dim256_t16.cu
+    src/neighbors/detail/cagra/search_single_cta_uint8_uint32_dim512_t32.cu
+    src/neighbors/detail/cagra/search_single_cta_uint8_uint32_dim1024_t32.cu
     OPTIONAL
     LIB
     EXPLICIT_INSTANTIATE_ONLY
@@ -370,7 +399,7 @@ if(BUILD_TESTS)
     LIB
     EXPLICIT_INSTANTIATE_ONLY
   )
-
+  
   ConfigureTest(
     NAME UTILS_TEST PATH test/core/seive.cu test/util/bitonic_sort.cu test/util/cudart_utils.cpp
     test/util/device_atomics.cu test/util/integer_utils.cpp test/util/pow2_utils.cu
