@@ -25,8 +25,6 @@
 #include <rmm/cuda_stream_view.hpp>
 
 #include "factory.cuh"
-#include "search_multi_cta.cuh"
-#include "search_multi_kernel.cuh"
 #include "search_plan.cuh"
 #include "search_single_cta.cuh"
 

@@ -32,7 +32,7 @@
 #include "device_common.hpp"
 #include "hashmap.hpp"
 #include "search_plan.cuh"
-#include "search_single_cta_kernel-inl.cuh"
+#include "search_single_cta_kernel.cuh"
 #include "topk_by_radix.cuh"
 #include "topk_for_cagra/topk_core.cuh"  // TODO replace with raft topk
 #include "utils.hpp"
